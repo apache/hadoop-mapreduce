@@ -425,6 +425,8 @@ Release 0.21.0 - Unreleased
     MAPREDUCE-639. Change Terasort example to reflect the 2009 updates. 
     (omalley)
 
+    HDFS-663. DFSIO for append. (shv)
+
   BUG FIXES
 
     MAPREDUCE-878. Rename fair scheduler design doc to 

@@ -37,7 +37,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapred.CapacityTestUtils.ControlledInitializationPoller;
 import org.apache.hadoop.mapred.CapacityTestUtils.FakeJobInProgress;
 import org.apache.hadoop.mapred.CapacityTestUtils.FakeTaskTrackerManager;
-import static org.apache.hadoop.mapred.CapacityTestUtils.checkAssignment;
+import static org.apache.hadoop.mapred.CapacityTestUtils.*;
 import org.junit.After;
 import org.junit.Test;
 
@@ -104,10 +104,6 @@ public class TestRefreshOfQueues {
       props[i] = queues[i].getProperties();
       props[i].setProperty(CapacitySchedulerConf.CAPACITY_PROPERTY,
           String.valueOf(i + 10));
-      props[i].setProperty(CapacitySchedulerConf.MAX_MAP_CAP_PROPERTY,
-          String.valueOf(i + 20));
-      props[i].setProperty(CapacitySchedulerConf.MAX_REDUCE_CAP_PROPERTY,
-          String.valueOf(i + 25));
       props[i].setProperty(CapacitySchedulerConf.MAX_CAPACITY_PROPERTY,
           String.valueOf(i + 15));
       props[i].setProperty(CapacitySchedulerConf.SUPPORTS_PRIORITY_PROPERTY,
@@ -136,8 +132,6 @@ public class TestRefreshOfQueues {
           allQueues.get(qName).getQueueSchedulingContext();
       LOG.info("Context for queue " + qName + " is : " + qsc);
       assertEquals(i + 10, qsc.getCapacityPercent(), 0);
-      assertEquals(i + 20, qsc.getMapTSC().getMaxTaskLimit());
-      assertEquals(i + 25, qsc.getReduceTSC().getMaxTaskLimit());
       assertEquals(i + 15, qsc.getMaxCapacityPercent(), 0);
       assertEquals(Boolean.valueOf(false),
           Boolean.valueOf(qsc.supportsPriorities()));
@@ -149,10 +143,6 @@ public class TestRefreshOfQueues {
       props[i] = queues[i].getProperties();
       props[i].setProperty(CapacitySchedulerConf.CAPACITY_PROPERTY,
           String.valueOf(i + 20));
-      props[i].setProperty(CapacitySchedulerConf.MAX_MAP_CAP_PROPERTY,
-          String.valueOf(i + 30));
-      props[i].setProperty(CapacitySchedulerConf.MAX_REDUCE_CAP_PROPERTY,
-          String.valueOf(i + 35));
       props[i].setProperty(CapacitySchedulerConf.MAX_CAPACITY_PROPERTY,
           String.valueOf(i + 25));
       props[i].setProperty(CapacitySchedulerConf.SUPPORTS_PRIORITY_PROPERTY,
@@ -183,8 +173,6 @@ public class TestRefreshOfQueues {
       assertEquals(qName, qsc.getQueueName());
       LOG.info("Context for queue " + qName + " is : " + qsc);
       assertEquals(i + 20, qsc.getCapacityPercent(), 0);
-      assertEquals(i + 30, qsc.getMapTSC().getMaxTaskLimit());
-      assertEquals(i + 35, qsc.getReduceTSC().getMaxTaskLimit());
       assertEquals(i + 25, qsc.getMaxCapacityPercent(), 0);
       assertEquals(Boolean.valueOf(false),
           Boolean.valueOf(qsc.supportsPriorities()));
@@ -201,65 +189,111 @@ public class TestRefreshOfQueues {
     JobQueueInfo[] queues = TestQueueManagerRefresh.getSimpleQueueHierarchy();
 
     queues[0].getProperties().setProperty(
-        CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(100));
+      CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(100));
     queues[1].getProperties().setProperty(
-        CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(50));
+      CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(50));
     queues[2].getProperties().setProperty(
-        CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(50));
+      CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(50));
 
     // write the configuration file
     QueueManagerTestUtils.writeQueueConfigurationFile(
-        queueConfigFile.getAbsolutePath(), new JobQueueInfo[] { queues[0] });
+      queueConfigFile.getAbsolutePath(), new JobQueueInfo[]{queues[0]});
 
     setupAndStartSchedulerFramework(2, 2, 2);
 
     FakeJobInProgress job1 =
-        taskTrackerManager.submitJobAndInit(JobStatus.PREP, 2, 0,
-            queues[1].getQueueName(), "user");
+      taskTrackerManager.submitJobAndInit(
+        JobStatus.PREP, 2, 2,
+        queues[1].getQueueName(), "user");
     FakeJobInProgress job2 =
-        taskTrackerManager.submitJobAndInit(JobStatus.PREP, 2, 0,
-            queues[2].getQueueName(), "user");
+      taskTrackerManager.submitJobAndInit(
+        JobStatus.PREP, 2, 2,
+        queues[2].getQueueName(), "user");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-        "attempt_test_0001_m_000001_0 on tt1");
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-        "attempt_test_0002_m_000001_0 on tt1");
-    checkAssignment(taskTrackerManager, scheduler, "tt2",
-        "attempt_test_0002_m_000002_0 on tt2");
-    checkAssignment(taskTrackerManager, scheduler, "tt2",
-        "attempt_test_0001_m_000002_0 on tt2");
+    Map<String, String> expectedStrings = new HashMap<String, String>();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000001_0 on tt1");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000001_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
+//===========================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0002_m_000001_0 on tt1");
+    expectedStrings.put(REDUCE, "attempt_test_0002_r_000001_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0002_m_000002_0 on tt2");
+    expectedStrings.put(REDUCE, "attempt_test_0002_r_000002_0 on tt2");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt2",
+      expectedStrings);
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000002_0 on tt2");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000002_0 on tt2");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt2",
+      expectedStrings);
 
     taskTrackerManager.killJob(job1.getJobID());
     taskTrackerManager.killJob(job2.getJobID());
 
     // change configuration
     queues[1].getProperties().setProperty(
-        CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(25));
+      CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(25));
     queues[2].getProperties().setProperty(
-        CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(75));
+      CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(75));
 
     // Re-write the configuration file
     QueueManagerTestUtils.writeQueueConfigurationFile(
-        queueConfigFile.getAbsolutePath(), new JobQueueInfo[] { queues[0] });
+      queueConfigFile.getAbsolutePath(), new JobQueueInfo[]{queues[0]});
 
-    taskTrackerManager.getQueueManager().refreshQueues(null,
-        scheduler.getQueueRefresher());
+    taskTrackerManager.getQueueManager().refreshQueues(
+      null,
+      scheduler.getQueueRefresher());
 
     job1 =
-        taskTrackerManager.submitJobAndInit(JobStatus.PREP, 2, 0,
-            queues[1].getQueueName(), "user");
+      taskTrackerManager.submitJobAndInit(
+        JobStatus.PREP, 2, 2,
+        queues[1].getQueueName(), "user");
     job2 =
-        taskTrackerManager.submitJobAndInit(JobStatus.PREP, 4, 0,
-            queues[2].getQueueName(), "user");
+      taskTrackerManager.submitJobAndInit(
+        JobStatus.PREP, 4, 4,
+        queues[2].getQueueName(), "user");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-        "attempt_test_0003_m_000001_0 on tt1");
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-        "attempt_test_0004_m_000001_0 on tt1");
-    checkAssignment(taskTrackerManager, scheduler, "tt2",
-        "attempt_test_0004_m_000002_0 on tt2");
-    checkAssignment(taskTrackerManager, scheduler, "tt2",
-        "attempt_test_0004_m_000003_0 on tt2");
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0003_m_000001_0 on tt1");
+    expectedStrings.put(REDUCE, "attempt_test_0003_r_000001_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
+
+
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0004_m_000001_0 on tt1");
+    expectedStrings.put(REDUCE, "attempt_test_0004_r_000001_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
+
+
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0004_m_000002_0 on tt2");
+    expectedStrings.put(REDUCE, "attempt_test_0004_r_000002_0 on tt2");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt2",
+      expectedStrings);
+
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0004_m_000003_0 on tt2");
+    expectedStrings.put(REDUCE, "attempt_test_0004_r_000003_0 on tt2");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt2",
+      expectedStrings);
+
   }
 
   /**
@@ -336,60 +370,84 @@ public class TestRefreshOfQueues {
     JobQueueInfo[] queues = TestQueueManagerRefresh.getSimpleQueueHierarchy();
 
     queues[0].getProperties().setProperty(
-        CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(100));
+      CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(100));
     queues[1].getProperties().setProperty(
-        CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(50));
+      CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(50));
     queues[2].getProperties().setProperty(
-        CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(50));
+      CapacitySchedulerConf.CAPACITY_PROPERTY, String.valueOf(50));
 
     queues[2].getProperties().setProperty(
-        CapacitySchedulerConf.MINIMUM_USER_LIMIT_PERCENT_PROPERTY,
-        String.valueOf(100));
+      CapacitySchedulerConf.MINIMUM_USER_LIMIT_PERCENT_PROPERTY,
+      String.valueOf(100));
 
     // write the configuration file
     QueueManagerTestUtils.writeQueueConfigurationFile(
-        queueConfigFile.getAbsolutePath(), new JobQueueInfo[] { queues[0] });
+      queueConfigFile.getAbsolutePath(), new JobQueueInfo[]{queues[0]});
 
     setupAndStartSchedulerFramework(1, 2, 2);
 
     FakeJobInProgress job1 =
-        taskTrackerManager.submitJobAndInit(JobStatus.PREP, 2, 0,
-            queues[2].getQueueName(), "user1");
+      taskTrackerManager.submitJobAndInit(
+        JobStatus.PREP, 2, 2,
+        queues[2].getQueueName(), "user1");
     FakeJobInProgress job2 =
-        taskTrackerManager.submitJobAndInit(JobStatus.PREP, 2, 0,
-            queues[2].getQueueName(), "user2");
+      taskTrackerManager.submitJobAndInit(
+        JobStatus.PREP, 2, 2,
+        queues[2].getQueueName(), "user2");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-        "attempt_test_0001_m_000001_0 on tt1");
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-        "attempt_test_0001_m_000002_0 on tt1");
+    Map<String, String> expectedStrings = new HashMap<String, String>();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000001_0 on tt1");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000001_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
+    
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000002_0 on tt1");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000002_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
+
     assertNull(scheduler.assignTasks(taskTrackerManager.getTaskTracker("tt1")));
     taskTrackerManager.killJob(job1.getJobID());
     taskTrackerManager.killJob(job2.getJobID());
 
     // change configuration
     queues[2].getProperties().setProperty(
-        CapacitySchedulerConf.MINIMUM_USER_LIMIT_PERCENT_PROPERTY,
-        String.valueOf(50));
+      CapacitySchedulerConf.MINIMUM_USER_LIMIT_PERCENT_PROPERTY,
+      String.valueOf(50));
 
     // Re-write the configuration file
     QueueManagerTestUtils.writeQueueConfigurationFile(
-        queueConfigFile.getAbsolutePath(), new JobQueueInfo[] { queues[0] });
+      queueConfigFile.getAbsolutePath(), new JobQueueInfo[]{queues[0]});
 
-    taskTrackerManager.getQueueManager().refreshQueues(null,
-        scheduler.getQueueRefresher());
+    taskTrackerManager.getQueueManager().refreshQueues(
+      null,
+      scheduler.getQueueRefresher());
 
     job1 =
-        taskTrackerManager.submitJobAndInit(JobStatus.PREP, 2, 0,
-            queues[1].getQueueName(), "user1");
+      taskTrackerManager.submitJobAndInit(
+        JobStatus.PREP, 2, 2,
+        queues[1].getQueueName(), "user1");
     job2 =
-        taskTrackerManager.submitJobAndInit(JobStatus.PREP, 2, 0,
-            queues[2].getQueueName(), "user2");
+      taskTrackerManager.submitJobAndInit(
+        JobStatus.PREP, 2, 2,
+        queues[2].getQueueName(), "user2");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-        "attempt_test_0003_m_000001_0 on tt1");
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-        "attempt_test_0004_m_000001_0 on tt1");
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0003_m_000001_0 on tt1");
+    expectedStrings.put(REDUCE, "attempt_test_0003_r_000001_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
+
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0004_m_000001_0 on tt1");
+    expectedStrings.put(REDUCE, "attempt_test_0004_r_000001_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
   }
 
   /**

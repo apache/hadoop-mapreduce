@@ -69,6 +69,7 @@ public class LocalJobRunner implements ClientProtocol {
     return ClientProtocol.versionID;
   }
   
+  @SuppressWarnings("unchecked")
   static RawSplit[] getRawSplits(JobContext jContext, JobConf job)
       throws Exception {
     JobConf jobConf = jContext.getJobConf();
@@ -309,7 +310,7 @@ public class LocalJobRunner implements ClientProtocol {
           }
         }
         // delete the temporary directory in output directory
-        outputCommitter.cleanupJob(jContext);
+        outputCommitter.commitJob(jContext);
         status.setCleanupProgress(1.0f);
 
         if (killed) {
@@ -322,7 +323,8 @@ public class LocalJobRunner implements ClientProtocol {
 
       } catch (Throwable t) {
         try {
-          outputCommitter.cleanupJob(jContext);
+          outputCommitter.abortJob(jContext, 
+            org.apache.hadoop.mapreduce.JobStatus.State.FAILED);
         } catch (IOException ioe) {
           LOG.info("Error cleaning up job:" + id);
         }
@@ -505,7 +507,8 @@ public class LocalJobRunner implements ClientProtocol {
   }
   
   public ClusterMetrics getClusterMetrics() {
-    return new ClusterMetrics(map_tasks, reduce_tasks, 1, 1, 1, 0, 0);
+    return new ClusterMetrics(map_tasks, reduce_tasks, map_tasks, reduce_tasks,
+      0, 0, 1, 1, jobs.size(), 1, 0, 0);
   }
 
   public State getJobTrackerState() throws IOException, InterruptedException {

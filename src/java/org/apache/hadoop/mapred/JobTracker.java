@@ -20,7 +20,6 @@ package org.apache.hadoop.mapred;
 
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
@@ -131,18 +130,27 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   // The maximum number of blacklists for a tracker after which the 
   // tracker could be blacklisted across all jobs
   private int MAX_BLACKLISTS_PER_TRACKER = 4;
+  
   // Approximate number of heartbeats that could arrive JobTracker
   // in a second
-  private int NUM_HEARTBEATS_IN_SECOND = 100;
+  private int NUM_HEARTBEATS_IN_SECOND;
+  private final int DEFAULT_NUM_HEARTBEATS_IN_SECOND = 100;
+  private final int MIN_NUM_HEARTBEATS_IN_SECOND = 1;
+  
+  // Scaling factor for heartbeats, used for testing only
+  private float HEARTBEATS_SCALING_FACTOR;
+  private final float MIN_HEARTBEATS_SCALING_FACTOR = 0.01f;
+  private final float DEFAULT_HEARTBEATS_SCALING_FACTOR = 1.0f;
+  
   public static enum State { INITIALIZING, RUNNING }
   State state = State.INITIALIZING;
   private static final int FS_ACCESS_RETRY_PERIOD = 10000;
 
   private DNSToSwitchMapping dnsToSwitchMapping;
-  private NetworkTopology clusterMap = new NetworkTopology();
+  NetworkTopology clusterMap = new NetworkTopology();
   private int numTaskCacheLevels; // the max level to which we cache tasks
   private Set<Node> nodesAtMaxLevel = new HashSet<Node>();
-  private final TaskScheduler taskScheduler;
+  final TaskScheduler taskScheduler;
   private final List<JobInProgressListener> jobInProgressListeners =
     new CopyOnWriteArrayList<JobInProgressListener>();
 
@@ -158,7 +166,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   
   static final Clock DEFAULT_CLOCK = new Clock();
 
-  private JobHistory jobHistory = null;
+  private final JobHistory jobHistory;
 
   /**
    * A client tried to submit a job before the Job Tracker was ready.
@@ -416,10 +424,11 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
                 // tracker is lost, and if it is blacklisted, remove 
                 // it from the count of blacklisted trackers in the cluster
                 if (isBlacklisted(trackerName)) {
-                  faultyTrackers.numBlacklistedTrackers -= 1;
+                  faultyTrackers.decrBlackListedTrackers(1);
                 }
                 updateTaskTrackerStatus(trackerName, null);
                 statistics.taskTrackerRemoved(trackerName);
+                getInstrumentation().decTrackers(1);
                 // remove the mapping from the hosts list
                 String hostname = newProfile.getHost();
                 hostnameToTaskTracker.get(hostname).remove(trackerName);
@@ -641,7 +650,16 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
       }        
     }
 
-    
+    private void incrBlackListedTrackers(int count) {
+      numBlacklistedTrackers += count;
+      getInstrumentation().addBlackListedTrackers(count);
+    }
+
+    private void decrBlackListedTrackers(int count) {
+      numBlacklistedTrackers -= count;
+      getInstrumentation().decBlackListedTrackers(count);
+    }
+
     private void blackListTracker(String hostName, String reason, ReasonForBlackListing rfb) {
       FaultInfo fi = getFaultInfo(hostName, true);
       boolean blackListed = fi.isBlacklisted();
@@ -800,7 +818,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
           getInstrumentation().addBlackListedReduceSlots(
               reduceSlots);
         }
-        numBlacklistedTrackers += uniqueHostsMap.remove(hostName);
+        incrBlackListedTrackers(uniqueHostsMap.remove(hostName));
       }
     }
     
@@ -820,7 +838,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
         }
         uniqueHostsMap.put(hostName,
                            numTrackersOnHost);
-        numBlacklistedTrackers -= numTrackersOnHost;
+        decrBlackListedTrackers(numTrackersOnHost);
       }
     }
 
@@ -1126,12 +1144,12 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   ////////////////////////////////////////////////////////////////
   int port;
   String localMachine;
-  private String trackerIdentifier;
+  private final String trackerIdentifier;
   long startTime;
   int totalSubmissions = 0;
   private int totalMapTaskCapacity;
   private int totalReduceTaskCapacity;
-  private HostsFileReader hostsReader;
+  private final HostsFileReader hostsReader;
   
   // JobTracker recovery variables
   private volatile boolean hasRecovered = false;
@@ -1206,6 +1224,10 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   //
   int totalMaps = 0;
   int totalReduces = 0;
+  private int occupiedMapSlots = 0;
+  private int occupiedReduceSlots = 0;
+  private int reservedMapSlots = 0;
+  private int reservedReduceSlots = 0;
   private HashMap<String, TaskTracker> taskTrackers =
     new HashMap<String, TaskTracker>();
   Map<String,Integer>uniqueHostsMap = new ConcurrentHashMap<String, Integer>();
@@ -1217,9 +1239,9 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   Thread expireLaunchingTaskThread = new Thread(expireLaunchingTasks,
                                                 "expireLaunchingTasks");
 
-  CompletedJobStatusStore completedJobStatusStore = null;
+  final CompletedJobStatusStore completedJobStatusStore;
   Thread completedJobsStoreThread = null;
-  RecoveryManager recoveryManager;
+  final RecoveryManager recoveryManager;
 
   /**
    * It might seem like a bug to maintain a TreeSet of tasktracker objects,
@@ -1256,7 +1278,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   static final String SUBDIR = "jobTracker";
   FileSystem fs = null;
   Path systemDir = null;
-  private JobConf conf;
+  JobConf conf;
   private final UserGroupInformation mrOwner;
   private final String supergroup;
 
@@ -1265,7 +1287,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   long memSizeForMapSlotOnJT;
   long memSizeForReduceSlotOnJT;
 
-  private QueueManager queueManager;
+  private final QueueManager queueManager;
 
   JobTracker(JobConf conf) 
   throws IOException,InterruptedException, LoginException {
@@ -1294,8 +1316,21 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
     tasktrackerExpiryInterval = 
       conf.getLong(JT_TRACKER_EXPIRY_INTERVAL, 10 * 60 * 1000);
     retiredJobsCacheSize = conf.getInt(JT_RETIREJOB_CACHE_SIZE, 1000);
-    MAX_BLACKLISTS_PER_TRACKER = conf.getInt(JTConfig.JT_MAX_TRACKER_BLACKLISTS, 4);
-    NUM_HEARTBEATS_IN_SECOND = conf.getInt(JT_HEARTBEATS_IN_SECOND, 100);
+    MAX_BLACKLISTS_PER_TRACKER = 
+      conf.getInt(JTConfig.JT_MAX_TRACKER_BLACKLISTS, 4);
+    
+    NUM_HEARTBEATS_IN_SECOND = 
+      conf.getInt(JT_HEARTBEATS_IN_SECOND, DEFAULT_NUM_HEARTBEATS_IN_SECOND);
+    if (NUM_HEARTBEATS_IN_SECOND < MIN_NUM_HEARTBEATS_IN_SECOND) {
+      NUM_HEARTBEATS_IN_SECOND = DEFAULT_NUM_HEARTBEATS_IN_SECOND;
+    }
+    
+    HEARTBEATS_SCALING_FACTOR = 
+      conf.getFloat(JT_HEARTBEATS_SCALING_FACTOR, 
+                    DEFAULT_HEARTBEATS_SCALING_FACTOR);
+    if (HEARTBEATS_SCALING_FACTOR < MIN_HEARTBEATS_SCALING_FACTOR) {
+      HEARTBEATS_SCALING_FACTOR = DEFAULT_HEARTBEATS_SCALING_FACTOR;
+    }
 
     //This configuration is there solely for tuning purposes and 
     //once this feature has been tested in real clusters and an appropriate
@@ -1790,7 +1825,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
    * 
    * @param taskTracker tasktracker whose 'non-running' tasks are to be purged
    */
-  private void removeMarkedTasks(String taskTracker) {
+  void removeMarkedTasks(String taskTracker) {
     // Purge all the 'marked' tasks which were running at taskTracker
     Set<TaskAttemptID> markedTaskSet = 
       trackerToMarkedTasksMap.get(taskTracker);
@@ -2086,7 +2121,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
    * 
    * @param status Task Tracker's status
    */
-  private void addNewTracker(TaskTracker taskTracker) {
+  void addNewTracker(TaskTracker taskTracker) {
     TaskTrackerStatus status = taskTracker.getStatus();
     trackerExpiryQueue.add(status);
 
@@ -2104,6 +2139,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
       hostnameToTaskTracker.put(hostname, trackers);
     }
     statistics.taskTrackerAdded(status.getTrackerName());
+    getInstrumentation().addTrackers(1);
     LOG.info("Adding tracker " + status.getTrackerName() + " to host " 
              + hostname);
     trackers.add(taskTracker);
@@ -2183,7 +2219,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   
   // Update the listeners about the job
   // Assuming JobTracker is locked on entry.
-  private void updateJobInProgressListeners(JobChangeEvent event) {
+  void updateJobInProgressListeners(JobChangeEvent event) {
     for (JobInProgressListener listener : jobInProgressListeners) {
       listener.jobUpdated(event);
     }
@@ -2347,15 +2383,16 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   
   /**
    * Calculates next heartbeat interval using cluster size.
-   * Heartbeat interval is incremented 1second for every 50 nodes. 
+   * Heartbeat interval is incremented by 1 second for every 100 nodes by default. 
    * @return next heartbeat interval.
    */
   public int getNextHeartbeatInterval() {
     // get the no of task trackers
     int clusterSize = getClusterStatus().getTaskTrackers();
     int heartbeatInterval =  Math.max(
-                                (int)(1000 * Math.ceil((double)clusterSize / 
-                                                       NUM_HEARTBEATS_IN_SECOND)),
+                                (int)(1000 * HEARTBEATS_SCALING_FACTOR *
+                                      Math.ceil((double)clusterSize / 
+                                                NUM_HEARTBEATS_IN_SECOND)),
                                 HEARTBEAT_INTERVAL_MIN) ;
     return heartbeatInterval;
   }
@@ -2393,13 +2430,17 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
    * @param status The new status for the task tracker
    * @return Was an old status found?
    */
-  private boolean updateTaskTrackerStatus(String trackerName,
+  boolean updateTaskTrackerStatus(String trackerName,
                                           TaskTrackerStatus status) {
     TaskTracker tt = getTaskTracker(trackerName);
     TaskTrackerStatus oldStatus = (tt == null) ? null : tt.getStatus();
     if (oldStatus != null) {
       totalMaps -= oldStatus.countMapTasks();
       totalReduces -= oldStatus.countReduceTasks();
+      occupiedMapSlots -= oldStatus.countOccupiedMapSlots();
+      occupiedReduceSlots -= oldStatus.countOccupiedReduceSlots();
+      getInstrumentation().decOccupiedMapSlots(oldStatus.countOccupiedMapSlots());
+      getInstrumentation().decOccupiedReduceSlots(oldStatus.countOccupiedReduceSlots());
       if (!faultyTrackers.isBlacklisted(oldStatus.getHost())) {
         int mapSlots = oldStatus.getMaxMapSlots();
         totalMapTaskCapacity -= mapSlots;
@@ -2422,6 +2463,10 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
     if (status != null) {
       totalMaps += status.countMapTasks();
       totalReduces += status.countReduceTasks();
+      occupiedMapSlots += status.countOccupiedMapSlots();
+      occupiedReduceSlots += status.countOccupiedReduceSlots();
+      getInstrumentation().addOccupiedMapSlots(status.countOccupiedMapSlots());
+      getInstrumentation().addOccupiedReduceSlots(status.countOccupiedReduceSlots());
       if (!faultyTrackers.isBlacklisted(status.getHost())) {
         int mapSlots = status.getMaxMapSlots();
         totalMapTaskCapacity += mapSlots;
@@ -2489,6 +2534,25 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
     return oldStatus != null;
   }
   
+  // Increment the number of reserved slots in the cluster.
+  // This method assumes the caller has JobTracker lock.
+  void incrementReservations(TaskType type, int reservedSlots) {
+    if (type.equals(TaskType.MAP)) {
+      reservedMapSlots += reservedSlots;
+    } else if (type.equals(TaskType.REDUCE)) {
+      reservedReduceSlots += reservedSlots;
+    }
+  }
+
+  // Decrement the number of reserved slots in the cluster.
+  // This method assumes the caller has JobTracker lock.
+  void decrementReservations(TaskType type, int reservedSlots) {
+    if (type.equals(TaskType.MAP)) {
+      reservedMapSlots -= reservedSlots;
+    } else if (type.equals(TaskType.REDUCE)) {
+      reservedReduceSlots -= reservedSlots;
+    }
+  }
   
   private void updateNodeHealthStatus(TaskTrackerStatus trackerStatus) {
     TaskTrackerHealthStatus status = trackerStatus.getHealthStatus();
@@ -2501,7 +2565,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   /**
    * Process incoming heartbeat messages from the task trackers.
    */
-  private synchronized boolean processHeartbeat(
+  synchronized boolean processHeartbeat(
                                  TaskTrackerStatus trackerStatus, 
                                  boolean initialContact) {
     String trackerName = trackerStatus.getTrackerName();
@@ -2530,7 +2594,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
           // if this is lost tracker that came back now, and if it blacklisted
           // increment the count of blacklisted trackers in the cluster
           if (isBlacklisted(trackerName)) {
-            faultyTrackers.numBlacklistedTrackers += 1;
+            faultyTrackers.incrBlackListedTrackers(1);
           }
           addNewTracker(taskTracker);
         }
@@ -2547,8 +2611,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
    * A tracker wants to know if any of its Tasks have been
    * closed (because the job completed, whether successfully or not)
    */
-  private synchronized List<TaskTrackerAction> getTasksToKill(
-                                                              String taskTracker) {
+  synchronized List<TaskTrackerAction> getTasksToKill(String taskTracker) {
     
     Set<TaskAttemptID> taskIds = trackerToTaskMap.get(taskTracker);
     List<TaskTrackerAction> killList = new ArrayList<TaskTrackerAction>();
@@ -2625,7 +2688,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   /**
    * A tracker wants to know if any of its Tasks can be committed 
    */
-  private synchronized List<TaskTrackerAction> getTasksToSave(
+  synchronized List<TaskTrackerAction> getTasksToSave(
                                                  TaskTrackerStatus tts) {
     List<TaskStatus> taskStatuses = tts.getTaskReports();
     if (taskStatuses != null) {
@@ -2928,9 +2991,12 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   }
   
   public synchronized ClusterMetrics getClusterMetrics() {
-    return new ClusterMetrics(totalMaps, totalReduces, totalMapTaskCapacity,
-      totalReduceTaskCapacity, taskTrackers.size() - 
-      getBlacklistedTrackerCount(), 
+    return new ClusterMetrics(totalMaps,
+      totalReduces, occupiedMapSlots, occupiedReduceSlots,
+      reservedMapSlots, reservedReduceSlots,
+      totalMapTaskCapacity, totalReduceTaskCapacity,
+      totalSubmissions,
+      taskTrackers.size() - getBlacklistedTrackerCount(), 
       getBlacklistedTrackerCount(), getExcludedNodes().size()) ;
   }
 
@@ -3744,12 +3810,13 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   }
 
   // main decommission
-  private synchronized void decommissionNodes(Set<String> hosts) 
+  synchronized void decommissionNodes(Set<String> hosts) 
   throws IOException {  
     LOG.info("Decommissioning " + hosts.size() + " nodes");
     // create a list of tracker hostnames
     synchronized (taskTrackers) {
       synchronized (trackerExpiryQueue) {
+        int trackersDecommissioned = 0;
         for (String host : hosts) {
           LOG.info("Decommissioning host " + host);
           Set<TaskTracker> trackers = hostnameToTaskTracker.remove(host);
@@ -3758,11 +3825,14 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
               LOG.info("Decommission: Losing tracker " + tracker + 
                        " on host " + host);
               lostTaskTracker(tracker); // lose the tracker
-              updateTaskTrackerStatus(tracker.getStatus().getTrackerName(), null);
+              updateTaskTrackerStatus(
+                tracker.getStatus().getTrackerName(), null);
             }
+            trackersDecommissioned += trackers.size();
           }
           LOG.info("Host " + host + " is ready for decommissioning");
         }
+        getInstrumentation().setDecommissionedTrackers(trackersDecommissioned);
       }
     }
   }
@@ -4090,7 +4160,108 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
   void incrementFaults(String hostName) {
     faultyTrackers.incrementFaults(hostName);
   }
-  
+
+  JobTracker(JobConf conf, Clock clock, boolean ignoredForSimulation) 
+  throws IOException {
+    this.clock = clock;
+    this.conf = conf;
+    trackerIdentifier = getDateFormat().format(new Date());
+
+    if (fs == null) {
+      fs = FileSystem.get(conf);
+    }
+    
+    tasktrackerExpiryInterval = 
+      conf.getLong("mapred.tasktracker.expiry.interval", 10 * 60 * 1000);
+    retiredJobsCacheSize = 
+      conf.getInt("mapred.job.tracker.retiredjobs.cache.size", 1000);
+
+    // min time before retire
+    MAX_BLACKLISTS_PER_TRACKER = 
+        conf.getInt("mapred.max.tracker.blacklists", 4);
+    NUM_HEARTBEATS_IN_SECOND = 
+        conf.getInt("mapred.heartbeats.in.second", 100);
+    
+    try {
+      mrOwner = UnixUserGroupInformation.login(conf);
+    } catch (LoginException e) {
+      throw new IOException(StringUtils.stringifyException(e));
+    }
+    supergroup = conf.get("mapred.permissions.supergroup", "supergroup");
+    
+    this.hostsReader = new HostsFileReader(conf.get("mapred.hosts", ""),
+        conf.get("mapred.hosts.exclude", ""));
+    // queue manager
+    Configuration queuesConf = new Configuration(this.conf);
+    queueManager = new QueueManager(queuesConf);
+
+    // Create the scheduler
+    Class<? extends TaskScheduler> schedulerClass
+      = conf.getClass("mapred.jobtracker.taskScheduler",
+          JobQueueTaskScheduler.class, TaskScheduler.class);
+    taskScheduler = 
+      (TaskScheduler)ReflectionUtils.newInstance(schedulerClass, conf);
+    
+    // Set ports, start RPC servers, setup security policy etc.
+    InetSocketAddress addr = getAddress(conf);
+    this.localMachine = addr.getHostName();
+    this.port = addr.getPort();
+
+    // Create the jetty server
+    InetSocketAddress infoSocAddr = NetUtils.createSocketAddr(
+        conf.get("mapred.job.tracker.http.address", "0.0.0.0:50030"));
+    String infoBindAddress = infoSocAddr.getHostName();
+    int tmpInfoPort = infoSocAddr.getPort();
+    this.startTime = clock.getTime();
+    infoServer = new HttpServer("job", infoBindAddress, tmpInfoPort, 
+        tmpInfoPort == 0, conf);
+    infoServer.setAttribute("job.tracker", this);
+    
+    // initialize history parameters.
+    String historyLogDir = null;
+    FileSystem historyFS = null;
+
+    jobHistory = new JobHistory();
+    jobHistory.init(this, conf, this.localMachine, this.startTime);
+    jobHistory.initDone(conf, fs);
+    historyLogDir = jobHistory.getCompletedJobHistoryLocation().toString();
+    infoServer.setAttribute("historyLogDir", historyLogDir);
+    historyFS = new Path(historyLogDir).getFileSystem(conf);
+
+    infoServer.setAttribute("fileSys", historyFS);
+    infoServer.addServlet("reducegraph", "/taskgraph", TaskGraphServlet.class);
+    infoServer.start();
+    this.infoPort = this.infoServer.getPort();
+
+    // Initialize instrumentation
+    JobTrackerInstrumentation tmp;
+    Class<? extends JobTrackerInstrumentation> metricsInst =
+      getInstrumentationClass(conf);
+    try {
+      java.lang.reflect.Constructor<? extends JobTrackerInstrumentation> c =
+        metricsInst.getConstructor(new Class[] {JobTracker.class, JobConf.class} );
+      tmp = c.newInstance(this, conf);
+    } catch(Exception e) {
+      //Reflection can throw lots of exceptions -- handle them all by 
+      //falling back on the default.
+      LOG.error("failed to initialize job tracker metrics", e);
+      tmp = new JobTrackerMetricsInst(this, conf);
+    }
+    myInstrumentation = tmp;
+    
+    // start the recovery manager
+    recoveryManager = new RecoveryManager();
+    
+    this.dnsToSwitchMapping = ReflectionUtils.newInstance(
+        conf.getClass("topology.node.switch.mapping.impl", ScriptBasedMapping.class,
+            DNSToSwitchMapping.class), conf);
+    this.numTaskCacheLevels = conf.getInt("mapred.task.cache.levels", 
+        NetworkTopology.DEFAULT_HOST_LEVEL);
+
+    //initializes the job status store
+    completedJobStatusStore = new CompletedJobStatusStore(conf);
+  }
+
   /**
    * Get the path of the locally stored job file
    * @param jobId id of the job

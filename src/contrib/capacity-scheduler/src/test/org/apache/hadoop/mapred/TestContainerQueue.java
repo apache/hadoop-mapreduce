@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.io.IOException;
-
 import static org.apache.hadoop.mapred.CapacityTestUtils.*;
 
 public class TestContainerQueue extends TestCase {
@@ -72,22 +71,22 @@ public class TestContainerQueue extends TestCase {
     // its children.
     //level 1 children
     QueueSchedulingContext a1 = new QueueSchedulingContext(
-      "a", 25, -1, -1, -1, -1);
+      "a", 25, -1, -1);
     QueueSchedulingContext a2 = new QueueSchedulingContext(
-      "b", 25, -1, -1, -1, -1);
+      "b", 25, -1, -1);
 
     AbstractQueue q = new ContainerQueue(rt, a1);
     AbstractQueue ql = new ContainerQueue(rt, a2);
 
     //level 2 children
     QueueSchedulingContext a = new QueueSchedulingContext(
-      "aa", 50, -1, -1, -1, -1);
+      "aa", 50, -1, -1);
     QueueSchedulingContext b = new QueueSchedulingContext(
-      "ab", 50, -1, -1, -1, -1);
+      "ab", 50, -1, -1);
     QueueSchedulingContext c = new QueueSchedulingContext(
-      "ac", 50, -1, -1, -1, -1);
+      "ac", 50, -1, -1);
     QueueSchedulingContext d = new QueueSchedulingContext(
-      "ad", 50, -1, -1, -1, -1);
+      "ad", 50, -1, -1);
 
     AbstractQueue q1 = new JobQueue(q, a);
     AbstractQueue q2 = new JobQueue(q, b);
@@ -120,27 +119,27 @@ public class TestContainerQueue extends TestCase {
 
   }
 
-  public void testMaxCapacity() throws IOException{
-    this.setUp(4,1,1);
+  public void testMaxCapacity() throws IOException {
+    this.setUp(4, 1, 1);
     taskTrackerManager.addJobInProgressListener(scheduler.jobQueuesManager);
 
     AbstractQueue rt = QueueHierarchyBuilder.createRootAbstractQueue();
 
     QueueSchedulingContext a1 = new QueueSchedulingContext(
-      "R.a", 25, 50, -1, -1, -1);
+      "R.a", 25, 50, -1);
     QueueSchedulingContext a2 = new QueueSchedulingContext(
-      "R.b", 25, 30, -1, -1, -1);
+      "R.b", 25, 30, -1);
     QueueSchedulingContext a3 = new QueueSchedulingContext(
-          "R.c", 50, -1, -1, -1, -1);
+      "R.c", 50, -1, -1);
 
 
     //Test for max capacity
     AbstractQueue q = new JobQueue(rt, a1);
     AbstractQueue q1 = new JobQueue(rt, a2);
     AbstractQueue q2 = new JobQueue(rt, a3);
-    scheduler.jobQueuesManager.addQueue((JobQueue)q);
-    scheduler.jobQueuesManager.addQueue((JobQueue)q1);
-    scheduler.jobQueuesManager.addQueue((JobQueue)q2);
+    scheduler.jobQueuesManager.addQueue((JobQueue) q);
+    scheduler.jobQueuesManager.addQueue((JobQueue) q1);
+    scheduler.jobQueuesManager.addQueue((JobQueue) q2);
 
     scheduler.setRoot(rt);
     rt.update(4, 4);
@@ -148,21 +147,35 @@ public class TestContainerQueue extends TestCase {
     scheduler.updateContextInfoForTests();
 
     // submit a job to the second queue
-    taskTrackerManager.submitJobAndInit(JobStatus.PREP, 20, 0, "R.a", "u1");
+    taskTrackerManager.submitJobAndInit(JobStatus.PREP, 20, 20, "R.a", "u1");
 
-    //Queue R.a should not more than 2 slots 
-    checkAssignment(
-      taskTrackerManager, scheduler, "tt1",
+    //Queue R.a should not more than 2 slots
+    Map<String, String> expectedStrings = new HashMap<String, String>();
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP,
       "attempt_test_0001_m_000001_0 on tt1");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE,
+      "attempt_test_0001_r_000001_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
 
-    checkAssignment(
-      taskTrackerManager, scheduler, "tt2",
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP,
       "attempt_test_0001_m_000002_0 on tt2");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE,
+      "attempt_test_0001_r_000002_0 on tt2");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt2",
+      expectedStrings);
 
-    //Now the queue has already reached its max limit no further tasks should
-    // be given.
-    List<Task> l = scheduler.assignTasks(taskTrackerManager.getTaskTracker("tt3"));
-    assertNull(l);
+    assertNull(scheduler.assignTasks(
+      taskTrackerManager.getTaskTracker(
+        "tt3")));
 
   }
 
@@ -172,20 +185,20 @@ public class TestContainerQueue extends TestCase {
 
     //generate Queuecontext for the children
     QueueSchedulingContext a1 = new QueueSchedulingContext(
-      "a", 50, -1, -1, -1, -1);
+      "a", 50, -1, -1);
     QueueSchedulingContext a2 = new QueueSchedulingContext(
-      "b", -1, -1, -1, -1, -1);
+      "b", -1, -1, -1);
 
     AbstractQueue rtChild1 = new ContainerQueue(rt, a1);
     AbstractQueue rtChild2 = new ContainerQueue(rt, a2);
 
     //Add further children to rtChild1.    
     QueueSchedulingContext b = new QueueSchedulingContext(
-      "ab", 30, -1, -1, -1, -1);
+      "ab", 30, -1, -1);
     QueueSchedulingContext c = new QueueSchedulingContext(
-      "ac", -1, -1, -1, -1, -1);
+      "ac", -1, -1, -1);
     QueueSchedulingContext d = new QueueSchedulingContext(
-      "ad", 100, -1, -1, -1, -1);
+      "ad", 100, -1, -1);
 
     AbstractQueue q0 = new JobQueue(rtChild1, b);
     AbstractQueue q1 = new JobQueue(rtChild1, c);
@@ -224,9 +237,9 @@ public class TestContainerQueue extends TestCase {
 
     //Firt level
     QueueSchedulingContext sch =
-      new QueueSchedulingContext("rt.sch", a, -1, -1, -1, -1);
+      new QueueSchedulingContext("rt.sch", a, -1, -1);
     QueueSchedulingContext gta =
-      new QueueSchedulingContext("rt.gta", b, -1, -1, -1, -1);
+      new QueueSchedulingContext("rt.gta", b, -1, -1);
 
     AbstractQueue schq = new ContainerQueue(rt, sch);
 
@@ -238,9 +251,9 @@ public class TestContainerQueue extends TestCase {
 
     //Create further children.
     QueueSchedulingContext prod =
-      new QueueSchedulingContext("rt.sch.prod", c, -1, -1, -1, -1);
+      new QueueSchedulingContext("rt.sch.prod", c, -1, -1);
     QueueSchedulingContext misc =
-      new QueueSchedulingContext("rt.sch.misc", d, -1, -1, -1, -1);
+      new QueueSchedulingContext("rt.sch.misc", d, -1, -1);
 
     AbstractQueue prodq = new JobQueue(schq, prod);
     AbstractQueue miscq = new JobQueue(schq, misc);
@@ -269,86 +282,160 @@ public class TestContainerQueue extends TestCase {
     scheduler.updateContextInfoForTests();
 
     // verify initial capacity distribution
-    TaskSchedulingContext mapTsc 
-        = map.get("rt.gta").getQueueSchedulingContext().getMapTSC();
+    TaskSchedulingContext mapTsc
+      = map.get("rt.gta").getQueueSchedulingContext().getMapTSC();
     assertEquals(mapTsc.getCapacity(), 3);
-    
+
     mapTsc = map.get("rt.sch").getQueueSchedulingContext().getMapTSC();
     assertEquals(mapTsc.getCapacity(), 5);
-    
+
     mapTsc = map.get("rt.sch.prod").getQueueSchedulingContext().getMapTSC();
     assertEquals(mapTsc.getCapacity(), 4);
 
     mapTsc = map.get("rt.sch.misc").getQueueSchedulingContext().getMapTSC();
     assertEquals(mapTsc.getCapacity(), 1);
 
-    assertUsedCapacity(map, 
-        new String[] {"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"}, 
-        new int[] { 0, 0, 0, 0 });
-    
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{0, 0, 0, 0});
+
     //Only Allow job submission to leaf queue
-    taskTrackerManager.submitJobAndInit(JobStatus.PREP, 4, 0, "rt.sch.prod",
-        "u1");
+    taskTrackerManager.submitJobAndInit(
+      JobStatus.PREP, 4, 4, "rt.sch.prod",
+      "u1");
 
     // submit a job to the second queue
-    taskTrackerManager.submitJobAndInit(JobStatus.PREP, 4, 0, "rt.sch.misc",
-        "u1");
+    taskTrackerManager.submitJobAndInit(
+      JobStatus.PREP, 4, 4, "rt.sch.misc",
+      "u1");
 
     //submit a job in gta level queue
-    taskTrackerManager.submitJobAndInit(JobStatus.PREP, 4, 0, "rt.gta", "u1");
+    taskTrackerManager.submitJobAndInit(JobStatus.PREP, 4, 4, "rt.gta", "u1");
 
     int counter = 0;
+    Map<String, String> expectedStrings = new HashMap<String, String>();
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP, "attempt_test_0001_m_000001_0 on tt1");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE, "attempt_test_0001_r_000001_0 on tt1");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
 
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-                      "attempt_test_0001_m_000001_0 on tt1");
-    assertUsedCapacity(map, 
-        new String[] {"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"}, 
-        new int[] { 0, 1, 1, 0 });
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{0, 1, 1, 0});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP, "attempt_test_0003_m_000001_0 on tt2");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE, "attempt_test_0003_r_000001_0 on tt2");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt2",
-      "attempt_test_0003_m_000001_0 on tt2");
-    assertUsedCapacity(map, 
-        new String[] {"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"}, 
-        new int[] { 1, 1, 1, 0 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt2",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{1, 1, 1, 0});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP, "attempt_test_0002_m_000001_0 on tt3");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE, "attempt_test_0002_r_000001_0 on tt3");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt3",
-      "attempt_test_0002_m_000001_0 on tt3");
-    assertUsedCapacity(map, 
-        new String[] {"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"}, 
-        new int[] { 1, 2, 1, 1 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt3",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{1, 2, 1, 1});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP, "attempt_test_0003_m_000002_0 on tt4");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE, "attempt_test_0003_r_000002_0 on tt4");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt4",
-      "attempt_test_0003_m_000002_0 on tt4");
-    assertUsedCapacity(map, 
-        new String[] {"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"}, 
-        new int[] { 2, 2, 1, 1 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt4",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{2, 2, 1, 1});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP, "attempt_test_0001_m_000002_0 on tt5");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE, "attempt_test_0001_r_000002_0 on tt5");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt5",
-      "attempt_test_0001_m_000002_0 on tt5");
-    assertUsedCapacity(map, 
-        new String[] {"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"}, 
-        new int[] { 2, 3, 2, 1 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt5",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{2, 3, 2, 1});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP, "attempt_test_0001_m_000003_0 on tt6");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE, "attempt_test_0001_r_000003_0 on tt6");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt6",
-      "attempt_test_0001_m_000003_0 on tt6");
-    assertUsedCapacity(map, 
-        new String[] {"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"}, 
-        new int[] { 2, 4, 3, 1 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt6",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{2, 4, 3, 1});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP, "attempt_test_0003_m_000003_0 on tt7");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE, "attempt_test_0003_r_000003_0 on tt7");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt7",
-      "attempt_test_0003_m_000003_0 on tt7");
-    assertUsedCapacity(map, 
-        new String[] {"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"}, 
-        new int[] { 3, 4, 3, 1 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt7",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{3, 4, 3, 1});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP, "attempt_test_0001_m_000004_0 on tt8");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE, "attempt_test_0001_r_000004_0 on tt8");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt8",
-      "attempt_test_0001_m_000004_0 on tt8");
-    assertUsedCapacity(map, 
-        new String[] {"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"}, 
-        new int[] { 3, 5, 4, 1 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt8",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{3, 5, 4, 1});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(
+      CapacityTestUtils.MAP, "attempt_test_0002_m_000002_0 on tt9");
+    expectedStrings.put(
+      CapacityTestUtils.REDUCE, "attempt_test_0002_r_000002_0 on tt9");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt9",
-      "attempt_test_0002_m_000002_0 on tt9");
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt9",
+      expectedStrings);
   }
   
   /**
@@ -373,75 +460,124 @@ public class TestContainerQueue extends TestCase {
     scheduler.updateContextInfoForTests();
 
     // verify capacities as per the setup.
-    TaskSchedulingContext mapTSC 
+    TaskSchedulingContext mapTSC
       = map.get("rt.gta").getQueueSchedulingContext().getMapTSC();
     assertEquals(mapTSC.getCapacity(), 2);
-    
+
     mapTSC = map.get("rt.sch").getQueueSchedulingContext().getMapTSC();
     assertEquals(mapTSC.getCapacity(), 5);
-    
+
     mapTSC = map.get("rt.sch.prod").getQueueSchedulingContext().getMapTSC();
     assertEquals(mapTSC.getCapacity(), 4);
-    
+
     mapTSC = map.get("rt.sch.misc").getQueueSchedulingContext().getMapTSC();
     assertEquals(mapTSC.getCapacity(), 1);
-    
-    assertUsedCapacity(map, 
-        new String[] { "rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc" },
-        new int[] { 0, 0, 0, 0 });
+
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{0, 0, 0, 0});
 
     // submit a job to the second queue
-    taskTrackerManager.submitJobAndInit(JobStatus.PREP, 20, 0, "rt.sch.misc",
-        "u1");
+    taskTrackerManager.submitJobAndInit(
+      JobStatus.PREP, 20, 20, "rt.sch.misc",
+      "u1");
 
     //submit a job in gta level queue
-    taskTrackerManager.submitJobAndInit(JobStatus.PREP, 20, 0, "rt.gta", "u1");
+    taskTrackerManager.submitJobAndInit(JobStatus.PREP, 20, 20, "rt.gta", "u1");
     int counter = 0;
+    Map<String, String> expectedStrings = new HashMap<String, String>();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000001_0 on tt1");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000001_0 on tt1");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt1",
-                      "attempt_test_0001_m_000001_0 on tt1");
-    assertUsedCapacity(map, 
-        new String[] { "rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc" },
-        new int[] { 0, 1, 0, 1 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt1",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{0, 1, 0, 1});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0002_m_000001_0 on tt2");
+    expectedStrings.put(REDUCE, "attempt_test_0002_r_000001_0 on tt2");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt2",
-      "attempt_test_0002_m_000001_0 on tt2");
-    assertUsedCapacity(map, 
-        new String[] { "rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc" },
-        new int[] { 1, 1, 0, 1 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt2",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{1, 1, 0, 1});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000002_0 on tt3");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000002_0 on tt3");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt3",
-      "attempt_test_0001_m_000002_0 on tt3");
-    assertUsedCapacity(map, 
-        new String[] { "rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc" },
-        new int[] { 1, 2, 0, 2 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt3",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{1, 2, 0, 2});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000003_0 on tt4");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000003_0 on tt4");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt4",
-      "attempt_test_0001_m_000003_0 on tt4");
-    assertUsedCapacity(map, 
-        new String[] { "rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc" },
-        new int[] { 1, 3, 0, 3 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt4",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{1, 3, 0, 3});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0002_m_000002_0 on tt5");
+    expectedStrings.put(REDUCE, "attempt_test_0002_r_000002_0 on tt5");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt5",
-      "attempt_test_0002_m_000002_0 on tt5");
-    assertUsedCapacity(map, 
-        new String[] { "rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc" },
-        new int[] { 2, 3, 0, 3 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt5",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{2, 3, 0, 3});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000004_0 on tt6");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000004_0 on tt6");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt6",
-      "attempt_test_0001_m_000004_0 on tt6");
-    assertUsedCapacity(map, 
-        new String[] { "rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc" },
-        new int[] { 2, 4, 0, 4 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt6",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{2, 4, 0, 4});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000005_0 on tt7");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000005_0 on tt7");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt7",
-      "attempt_test_0001_m_000005_0 on tt7");
-    assertUsedCapacity(map, 
-        new String[] { "rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc" },
-        new int[] { 2, 5, 0, 5 });
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt7",
+      expectedStrings);
+    assertUsedCapacity(
+      map,
+      new String[]{"rt.gta", "rt.sch", "rt.sch.prod", "rt.sch.misc"},
+      new int[]{2, 5, 0, 5});
+//============================================
+    expectedStrings.clear();
+    expectedStrings.put(MAP, "attempt_test_0001_m_000006_0 on tt8");
+    expectedStrings.put(REDUCE, "attempt_test_0001_r_000006_0 on tt8");
 
-    checkAssignment(taskTrackerManager, scheduler, "tt8",
-      "attempt_test_0001_m_000006_0 on tt8");
+
+    checkMultipleTaskAssignment(
+      taskTrackerManager, scheduler, "tt8",
+      expectedStrings);
   }
 
   // verify that the number of slots used for each queue
@@ -456,26 +592,6 @@ public class TestContainerQueue extends TestCase {
       TaskSchedulingContext mapTSC = 
         queueMap.get(queueNames[i]).getQueueSchedulingContext().getMapTSC();
       assertEquals(mapTSC.getNumSlotsOccupied(), expectedUsedSlots[i]);
-    }
-  }
-
-  private void printOrderedQueueData(AbstractQueue rt) {
-    //print data at all levels.
-    List<AbstractQueue> aq = rt.getChildren();
-    System.out.println();
-    for (AbstractQueue a : aq) {
-      System.out.println(
-        "    // " + a.getName() + "->  data " +
-          a.getQueueSchedulingContext().getMapTSC().getCapacity() + " " +
-          " " +
-          a.getQueueSchedulingContext().getMapTSC().getNumSlotsOccupied());
-      double f = ((double) a.getQueueSchedulingContext().getMapTSC()
-        .getNumSlotsOccupied() /
-        (double) a.getQueueSchedulingContext().getMapTSC().getCapacity());
-      System.out.println("    // rating -> " + f);
-      if (a.getChildren() != null) {
-        printOrderedQueueData(a);
-      }
     }
   }
 }

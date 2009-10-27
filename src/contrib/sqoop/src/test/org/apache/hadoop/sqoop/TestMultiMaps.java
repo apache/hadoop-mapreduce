@@ -28,10 +28,12 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.SequenceFile;
+import org.apache.hadoop.mapred.Utils;
 import org.apache.hadoop.util.ReflectionUtils;
 
 import org.apache.hadoop.sqoop.ImportOptions.InvalidOptionsException;
 import org.apache.hadoop.sqoop.orm.CompilationManager;
+import org.apache.hadoop.sqoop.testutil.CommonArgs;
 import org.apache.hadoop.sqoop.testutil.HsqldbTestServer;
 import org.apache.hadoop.sqoop.testutil.ImportJobTestCase;
 import org.apache.hadoop.sqoop.testutil.SeqFileReader;
@@ -55,10 +57,7 @@ public class TestMultiMaps extends ImportJobTestCase {
     ArrayList<String> args = new ArrayList<String>();
 
     if (includeHadoopFlags) {
-      args.add("-D");
-      args.add("mapred.job.tracker=local");
-      args.add("-D");
-      args.add("fs.default.name=file:///");
+      CommonArgs.addHadoopFlags(args);
     }
 
     args.add("--table");
@@ -90,7 +89,9 @@ public class TestMultiMaps extends ImportJobTestCase {
     conf.set("fs.default.name", "file:///");
     FileSystem fs = FileSystem.get(conf);
 
-    FileStatus [] stats = fs.listStatus(getTablePath());
+    FileStatus [] stats = fs.listStatus(getTablePath(),
+        new Utils.OutputFileUtils.OutputFilesFilter());
+
     for (FileStatus stat : stats) {
       paths.add(stat.getPath());
     }

@@ -18,10 +18,12 @@
 
 package org.apache.hadoop.mapreduce.jobhistory;
 
+import java.io.Closeable;
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.EOFException;
+import java.io.StringBufferInputStream;
 
-import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.Counter;
@@ -29,15 +31,16 @@ import org.apache.hadoop.mapreduce.CounterGroup;
 import org.apache.hadoop.mapreduce.Counters;
 
 import org.apache.avro.Schema;
+import org.apache.avro.AvroRuntimeException;
 import org.apache.avro.io.Decoder;
-import org.apache.avro.io.BinaryDecoder;
+import org.apache.avro.io.JsonDecoder;
 import org.apache.avro.io.DatumReader;
 import org.apache.avro.specific.SpecificDatumReader;
 
-public class EventReader {
+public class EventReader implements Closeable {
   private String version;
   private Schema schema;
-  private FSDataInputStream in;
+  private DataInputStream in;
   private Decoder decoder;
   private DatumReader reader;
 
@@ -57,7 +60,7 @@ public class EventReader {
    * @throws IOException
    */
   @SuppressWarnings("deprecation")
-  public EventReader(FSDataInputStream in) throws IOException {
+  public EventReader(DataInputStream in) throws IOException {
     this.in = in;
     this.version = in.readLine();
     
@@ -65,10 +68,8 @@ public class EventReader {
       throw new IOException("Incompatible event log version: "+version);
     
     this.schema = Schema.parse(in.readLine());
-    this.reader =
-      new SpecificDatumReader(schema,
-                              "org.apache.hadoop.mapreduce.jobhistory.Events$");
-    this.decoder = new BinaryDecoder(in);
+    this.reader = new SpecificDatumReader(schema);
+    this.decoder = new JsonDecoder(schema, in);
   }
   
   /**
@@ -78,10 +79,10 @@ public class EventReader {
    */
   @SuppressWarnings("unchecked")
   public HistoryEvent getNextEvent() throws IOException {
-    Events.Event wrapper;
+    Event wrapper;
     try {
-      wrapper = (Events.Event)reader.read(null, decoder);
-    } catch (EOFException e) {
+      wrapper = (Event)reader.read(null, decoder);
+    } catch (AvroRuntimeException e) {            // at EOF
       return null;
     }
     HistoryEvent result;
@@ -153,6 +154,7 @@ public class EventReader {
    * Close the Event reader
    * @throws IOException
    */
+  @Override
   public void close() throws IOException {
     if (in != null) {
       in.close();
@@ -160,12 +162,12 @@ public class EventReader {
     in = null;
   }
 
-  static Counters fromAvro(Events.Counters counters) {
+  static Counters fromAvro(JhCounters counters) {
     Counters result = new Counters();
-    for (Events.CounterGroup g : counters.groups) {
+    for (JhCounterGroup g : counters.groups) {
       CounterGroup group =
         new CounterGroup(g.name.toString(), g.displayName.toString());
-      for (Events.Counter c : g.counts) {
+      for (JhCounter c : g.counts) {
         group.addCounter(new Counter(c.name.toString(),
                                      c.displayName.toString(),
                                      c.value));

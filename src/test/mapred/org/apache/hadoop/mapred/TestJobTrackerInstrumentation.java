@@ -129,11 +129,6 @@ public class TestJobTrackerInstrumentation extends TestCase {
     taskAttemptID[1] = job.findMapTask(trackers[1]);
     taskAttemptID[2] = job.findReduceTask(trackers[2]);
     
-    assertTrue("Mismatch in num  running maps",
-        mi.numRunningMaps == numMaps);
-    assertTrue("Mismatch in num running reduces",
-        mi.numRunningReduces == numReds);
-
     job.finishTask(taskAttemptID[0]);
     job.finishTask(taskAttemptID[1]);
     job.finishTask(taskAttemptID[2]);
@@ -254,6 +249,10 @@ public class TestJobTrackerInstrumentation extends TestCase {
       mapSlotsPerTask+mapSlotsPerTask1, mi.numOccupiedMapSlots);
     assertEquals("Mismatch in reduce slots occupied",
       reduceSlotsPerTask+reduceSlotsPerTask1, mi.numOccupiedReduceSlots);
+    assertEquals("Mismatch in num  running maps",
+        2, mi.numRunningMaps);
+      assertEquals("Mismatch in num running reduces",
+        2, mi.numRunningReduces);
     
     //now send heartbeat with no running tasks
     status = new TaskTrackerStatus[1];
@@ -265,6 +264,10 @@ public class TestJobTrackerInstrumentation extends TestCase {
       0, mi.numOccupiedMapSlots);
     assertEquals("Mismatch in reduce slots occupied",
       0, mi.numOccupiedReduceSlots);
+    assertEquals("Mismatch in num  running maps",
+      0, mi.numRunningMaps);
+    assertEquals("Mismatch in num running reduces",
+      0, mi.numRunningReduces);
   }
 
   public void testReservedSlots() throws IOException {
@@ -295,6 +298,18 @@ public class TestJobTrackerInstrumentation extends TestCase {
   }
   
   public void testDecomissionedTrackers() throws IOException {
+    // create TaskTrackerStatus and send heartbeats
+    TaskTrackerStatus[] status = new TaskTrackerStatus[trackers.length];
+    status[0] = getTTStatus(trackers[0], new ArrayList<TaskStatus>());
+    status[1] = getTTStatus(trackers[1], new ArrayList<TaskStatus>());
+    status[2] = getTTStatus(trackers[2], new ArrayList<TaskStatus>());
+    for (int i = 0; i< trackers.length; i++) {
+      FakeObjectUtilities.sendHeartBeat(jobTracker, status[i], false,
+          false, trackers[i], responseId);
+    }
+    
+    assertEquals("Mismatch in number of trackers",
+        trackers.length, mi.numTrackers);
     Set<String> dHosts = new HashSet<String>();
     dHosts.add(hosts[1]);
     assertEquals("Mismatch in number of decommissioned trackers",
@@ -302,6 +317,8 @@ public class TestJobTrackerInstrumentation extends TestCase {
     jobTracker.decommissionNodes(dHosts);
     assertEquals("Mismatch in number of decommissioned trackers",
         1, mi.numTrackersDecommissioned);
+    assertEquals("Mismatch in number of trackers",
+        trackers.length - 1, mi.numTrackers);
   }
   
   static class FakeTaskScheduler extends JobQueueTaskScheduler {
@@ -555,25 +572,25 @@ public class TestJobTrackerInstrumentation extends TestCase {
     }
 
     @Override
-    public synchronized void addRunningMaps(JobID id, int task)
+    public synchronized void addRunningMaps(int task)
     {
       numRunningMaps += task;
     }
 
     @Override
-    public synchronized void decRunningMaps(JobID id, int task) 
+    public synchronized void decRunningMaps(int task) 
     {
       numRunningMaps -= task;
     }
 
     @Override
-    public synchronized void addRunningReduces(JobID id, int task)
+    public synchronized void addRunningReduces(int task)
     {
       numRunningReduces += task;
     }
 
     @Override
-    public synchronized void decRunningReduces(JobID id, int task)
+    public synchronized void decRunningReduces(int task)
     {
       numRunningReduces -= task;
     }

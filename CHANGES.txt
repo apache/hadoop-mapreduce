@@ -11,6 +11,9 @@ Trunk (unreleased changes)
 
   IMPROVEMENTS
 
+    MAPREDUCE-707. Provide a jobconf property for explicitly assigning a job to 
+    a pool in the Fair Scheduler. (Alan Heirich via matei)
+
     MAPREDUCE-999. Improve Sqoop test speed and refactor tests.
     (Aaron Kimball via tomwhite)
 
@@ -65,6 +68,14 @@ Trunk (unreleased changes)
 
     MAPREDUCE-1153. Fix tasktracker metrics when trackers are decommissioned.
     (sharad)
+
+    MAPREDUCE-1128. Fix MRUnit to prohibit iterating over values twice. (Aaron
+    Kimball via cdouglas)
+
+    MAPREDUCE-665. Move libhdfs to HDFS subproject. (Eli Collins via dhruba)
+
+    MAPREDUCE-1196. Fix FileOutputCommitter to use the deprecated cleanupJob
+    api correctly. (acmurthy)
 
 Release 0.21.0 - Unreleased
 
@@ -850,3 +861,19 @@ Release 0.21.0 - Unreleased
 
     MAPREDUCE-1038. Weave Mumak aspects only if related files have changed.
     (Aaron Kimball via cdouglas)
+
+    MAPREDUCE-1037. Continue running contrib tests if Sqoop tests fail. (Aaron
+    Kimball via cdouglas)
+
+    MAPREDUCE-1163. Remove unused, hard-coded paths from libhdfs. (Allen
+    Wittenauer via cdouglas)
+
+    MAPREDUCE-962. Fix a NullPointerException while killing task process 
+    trees. (Ravi Gummadi via yhemanth)
+
+    MAPREDUCE-1177. Correct setup/cleanup inversion in
+    JobTracker::getTaskReports. (Vinod Kumar Vavilapalli via cdouglas)
+
+    MAPREDUCE-1178. Fix ClassCastException in MultipleInputs by adding 
+    a DelegatingRecordReader. (Amareshwari Sriramadasu and Jay Booth 
+    via sharad)
